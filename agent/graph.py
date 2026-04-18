@@ -51,12 +51,25 @@ def architect_agent(state: agent_state)-> agent_state:
 
 
 def coder_agent(state: agent_state)-> agent_state:
-    
+
     print("executing CODER agent Node...")
-    steps = state["messages"][0].implementation_steps
 
-    current_step_indx = 0
+    coder_state = state["messages"][0].coder_state
 
+    if coder_state is None:
+        coder_state = CoderState(task_plan=state["messages"][0], current_step_idx=0)
+
+    
+    
+    steps = coder_state.task_plan.implementation_steps
+
+    if coder_state.current_step_idx >= len(steps):
+        resp = [{"coder_state": coder_state}, {"status": "DONE"}]
+        return {"messages": resp}
+
+
+    
+    current_step_indx = steps[coder_state.current_step_idx]
     current_task = steps[current_step_indx]
 
     existing_content = read_file.run(current_task.filepath)
@@ -85,10 +98,10 @@ def coder_agent(state: agent_state)-> agent_state:
     """ if resp is None:
         raise ValueError("Architect did not return a valid response.") """
     
-    
+    coder_state.current_step_idx +=1
     
     return {
-        
+        "messages" : [{"coder_state": coder_state}]
     }
     
 
@@ -107,7 +120,12 @@ builder.add_node("coder_agent_node", coder_agent)
 builder.add_edge(START, "planner_agent_node")
 builder.add_edge("planner_agent_node", "architect_agent_node")
 builder.add_edge("architect_agent_node", "coder_agent_node")
-builder.add_edge("coder_agent_node", END)
+builder.add_conditional_edges(
+    "coder_agent_node",
+    lambda s: "END" if s[-1].get("status") == "DONE" else "coder_agent_node",
+    {"END": END, "coder_agent_node": "coder_agent_node"}
+)
+#builder.add_edge("coder_agent_node", END)
 
 graph = builder.compile()
 
